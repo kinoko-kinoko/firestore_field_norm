@@ -1,0 +1,40 @@
+name: 'Run Firestore Normalization Script'
+
+# このワークフローを「手動」で実行できるようにする
+on:
+  workflow_dispatch:
+
+jobs:
+  normalize-data:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. リポジトリのコードをチェックアウトする
+      - name: 'Checkout code'
+        uses: actions/checkout@v4
+
+      # 2. Node.js (v18) をセットアップする
+      - name: 'Set up Node.js'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      # 3. 必要なパッケージ (firebase-admin) をインストールする
+      #    (事前に package.json に "firebase-admin": "..." を追加しておいてください)
+      - name: 'Install dependencies'
+        run: npm install
+
+      # 4. GitHub Secrets からサービスアカウントキーのJSONファイルを作成する
+      - name: 'Create service account key file'
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}' > ./serviceAccountKey.json
+        shell: bash
+
+      # 5. 正規化スクリプトを実行する
+      #    (スクリプトが 'normalize.js' という名前でリポジトリのルートにあると仮定)
+      - name: 'Run normalization script'
+        run: node normalize.js
+
+      # 6. (重要) 実行後にサービスアカウントキーのJSONファイルを削除する
+      - name: 'Remove service account key file'
+        if: always() # 成功しても失敗しても必ず実行
+        run: rm ./serviceAccountKey.json
