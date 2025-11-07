@@ -60,10 +60,33 @@ function normalizeForSearch(inputStr) {
   return str;
 }
 
+// <--- NEW: N-gram (2文字, 3文字) を生成する関数 ---
+/**
+ * 文字列からN-gramのセットを生成する (2-gram, 3-gram)
+ * @param {string} text N-gramを生成する元の文字列
+ * @param {number[]} nValues N-gramの文字数 (例: [2, 3])
+ * @returns {string[]} N-gramの（重複排除された）配列
+ */
+function createNgrams(text, nValues = [2, 3]) {
+  const ngrams = new Set();
+  if (typeof text !== 'string' || !text) {
+    return [];
+  }
+  
+  nValues.forEach(n => {
+    for (let i = 0; i < text.length - n + 1; i++) {
+      ngrams.add(text.substring(i, i + n));
+    }
+  });
+  return Array.from(ngrams);
+}
+// <--- NEW: N-gram関数ここまで ---
+
+
 // --- 正規化処理を実行するメイン関数 ---------------------
 
 async function migrateData() {
-  console.log('正規化処理を開始します...');
+  console.log('N-gramを含む正規化処理を開始します...');
 
   const appsRef = db.collection('apps');
   const snapshot = await appsRef.get();
@@ -85,7 +108,7 @@ async function migrateData() {
     const data = doc.data();
     const updateData = {}; // このドキュメントで更新するデータ
 
-    // --- 1. name_norm の処理 ---
+    // --- 1. name_norm と name_norm_ngrams の処理 ---
     // ルール: name["en"] ?? name.first?.value ?? ""
     let baseName = "";
     if (data.name && typeof data.name === 'object') {
@@ -93,7 +116,6 @@ async function migrateData() {
         baseName = data.name.en; // 英語表記 (en) を最優先
       } else {
         // 英語がなく、nameがマップの場合、最初のエントリにフォールバック
-        // (JavaScriptのオブジェクトは順序を保証しないが、first?.valueの挙動を模倣)
         const firstValue = Object.values(data.name)[0];
         if (firstValue && typeof firstValue === 'string') {
           baseName = firstValue;
@@ -103,14 +125,19 @@ async function migrateData() {
     
     // 正規化して 'name_norm' を作成
     updateData.name_norm = normalizeForSearch(baseName);
+    
+    // <--- NEW: 'name_norm' から 'name_norm_ngrams' を作成 ---
+    updateData.name_norm_ngrams = createNgrams(updateData.name_norm);
+    // <--- NEW: 変更ここまで ---
 
     // --- 2. aliases_norm の処理 ---
+    // (これは前回から変更なし)
     if (Array.isArray(data.aliases)) {
       // aliases配列の各要素を正規化
       updateData.aliases_norm = data.aliases
         .filter(alias => typeof alias === 'string') // 文字列のみを対象
         .map(alias => normalizeForSearch(alias)); // 各エイリアスを正規化
-    } else {
+    } else if (!data.aliases_norm) { // 既に存在しない場合のみ
       // aliasesフィールドが存在しない場合も、空の配列で 'aliases_norm' を作成
       updateData.aliases_norm = [];
     }
@@ -131,7 +158,7 @@ async function migrateData() {
   console.log(`合計 ${batchArray.length} 個のバッチ処理を実行中...`);
   await Promise.all(batchArray.map(batch => batch.commit()));
 
-  console.log('正規化処理が完了しました！');
+  console.log('正規化処理（N-gram含む）が完了しました！');
 }
 
 // スクリプトを実行
